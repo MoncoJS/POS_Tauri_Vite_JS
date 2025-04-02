@@ -1,9 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { useState } from "react";
+import { useCart } from "../context/CartContext";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
+  const { items } = useCart();
+
+  // Calculate total quantity of items in cart
+  const cartItemCount = items.reduce((total, item) => total + item.quantity, 0);
 
   return (
     <nav className="bg-gray-900 border-b border-gray-800 fixed w-full top-0 left-0 z-30">
@@ -121,9 +126,17 @@ const Navbar = () => {
                   />
                 </svg>
                 Cart
-                <span className="flex items-center justify-center w-5 h-5 ms-2 text-xs font-semibold text-blue-800 bg-blue-200 rounded-full">
-                  0
-                </span>
+                {cartItemCount > 0 && (
+                  <span
+                    className={`flex items-center justify-center w-5 h-5 ms-2 text-xs font-semibold rounded-full ${
+                      location.pathname === "/cart"
+                        ? "bg-white text-blue-600"
+                        : "bg-blue-600 text-white"
+                    }`}
+                  >
+                    {cartItemCount}
+                  </span>
+                )}
               </Link>
             </li>
           </ul>

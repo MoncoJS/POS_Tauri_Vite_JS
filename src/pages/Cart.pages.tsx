@@ -1,7 +1,53 @@
 import { useCart } from "../context/CartContext";
+import { useStock } from "../context/StockContext";
+import { useState } from "react";
 
 const Cart = () => {
-  const { items, removeFromCart, updateQuantity, getTotal } = useCart();
+  const { items, removeFromCart, updateQuantity, getTotal, clearCart } =
+    useCart();
+  const { checkStock, updateStock, checkStockAvailability } = useStock();
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const handleQuantityChange = (productId: number, newQuantity: number) => {
+    if (newQuantity < 1) return;
+
+    // Check if requested quantity is available in stock
+    if (checkStockAvailability(productId, newQuantity)) {
+      updateQuantity(productId, newQuantity);
+      setCheckoutError(null);
+    } else {
+      const availableStock = checkStock(productId);
+      setCheckoutError(
+        `สินค้าไม่พอ มีสินค้าในสต็อกเพียง ${availableStock} ชิ้น`
+      );
+    }
+  };
+
+  const handleCheckout = () => {
+    // Verify all items are available in stock
+    const stockAvailable = items.every((item) =>
+      checkStockAvailability(item.id, item.quantity)
+    );
+
+    if (!stockAvailable) {
+      setCheckoutError(
+        "บางรายการมีสินค้าไม่พอ กรุณาตรวจสอบจำนวนสินค้าอีกครั้ง"
+      );
+      return;
+    }
+
+    // Update stock for all items
+    items.forEach((item) => {
+      updateStock(item.id, item.quantity);
+    });
+
+    // Clear cart
+    clearCart();
+    setCheckoutError(null);
+
+    // Show success message (you might want to use a proper notification system)
+    alert("ชำระเงินสำเร็จ!");
+  };
 
   if (items.length === 0) {
     return (
@@ -31,63 +77,112 @@ const Cart = () => {
         ตะกร้าสินค้า
       </h2>
 
+      {checkoutError && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+          {checkoutError}
+        </div>
+      )}
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {items.map((item) => (
-            <div key={item.id} className="p-4 flex items-center gap-4">
-              <div className="w-20 h-20 flex-shrink-0">
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-full h-full object-cover rounded-lg"
-                />
-              </div>
+          {items.map((item) => {
+            const stockAvailable = checkStock(item.id);
+            const hasStockIssue = item.quantity > stockAvailable;
 
-              <div className="flex-grow">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {item.name}
-                </h3>
-                <p className="text-blue-600 dark:text-blue-400 font-medium">
-                  ฿{item.price.toFixed(2)}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      updateQuantity(item.id, Math.max(1, item.quantity - 1))
-                    }
-                    className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M20 12H4"
-                      />
-                    </svg>
-                  </button>
-
-                  <input
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={(e) =>
-                      updateQuantity(item.id, parseInt(e.target.value) || 1)
-                    }
-                    className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-center dark:bg-gray-700 dark:text-white"
+            return (
+              <div key={item.id} className="p-4 flex items-center gap-4">
+                <div className="w-20 h-20 flex-shrink-0">
+                  <img
+                    src={item.image}
+                    alt={item.name}
+                    className="w-full h-full object-cover rounded-lg"
                   />
+                </div>
+
+                <div className="flex-grow">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {item.name}
+                  </h3>
+                  <p className="text-blue-600 dark:text-blue-400 font-medium">
+                    ฿{item.price.toFixed(2)}
+                  </p>
+                  {hasStockIssue && (
+                    <p className="text-sm text-red-500 mt-1">
+                      เหลือในสต็อก: {stockAvailable} ชิ้น
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() =>
+                        handleQuantityChange(
+                          item.id,
+                          Math.max(1, item.quantity - 1)
+                        )
+                      }
+                      className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M20 12H4"
+                        />
+                      </svg>
+                    </button>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max={stockAvailable}
+                      value={item.quantity}
+                      onChange={(e) =>
+                        handleQuantityChange(
+                          item.id,
+                          parseInt(e.target.value) || 1
+                        )
+                      }
+                      className={`w-16 px-2 py-1 border rounded-md text-center ${
+                        hasStockIssue
+                          ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/30"
+                          : "border-gray-300 dark:border-gray-600 dark:bg-gray-700"
+                      } dark:text-white`}
+                    />
+
+                    <button
+                      onClick={() =>
+                        handleQuantityChange(item.id, item.quantity + 1)
+                      }
+                      className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                      disabled={item.quantity >= stockAvailable}
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                    </button>
+                  </div>
 
                   <button
-                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                    className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                    onClick={() => removeFromCart(item.id)}
+                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full"
                   >
                     <svg
                       className="w-5 h-5"
@@ -99,33 +194,14 @@ const Cart = () => {
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={2}
-                        d="M12 4v16m8-8H4"
+                        d="M6 18L18 6M6 6l12 12"
                       />
                     </svg>
                   </button>
                 </div>
-
-                <button
-                  onClick={() => removeFromCart(item.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
@@ -138,7 +214,15 @@ const Cart = () => {
             </span>
           </div>
 
-          <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300">
+          <button
+            onClick={handleCheckout}
+            disabled={items.some((item) => item.quantity > checkStock(item.id))}
+            className={`w-full font-medium py-2 px-4 rounded-lg transition-colors duration-300 ${
+              items.some((item) => item.quantity > checkStock(item.id))
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400"
+                : "bg-blue-600 hover:bg-blue-700 text-white"
+            }`}
+          >
             ดำเนินการชำระเงิน
           </button>
         </div>

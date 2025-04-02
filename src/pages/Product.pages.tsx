@@ -8,12 +8,14 @@ interface Product {
   price: number;
   image: string;
   description: string;
+  category: string;
 }
 
 const Products = () => {
   const { addToCart } = useCart();
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
-  // Mock products data - replace with your actual data
+  // Mock products data with categories
   const products: Product[] = [
     {
       id: 1,
@@ -22,6 +24,7 @@ const Products = () => {
       image:
         "https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=3337&auto=format&fit=crop",
       description: "กาแฟนมร้อน หอมกรุ่น",
+      category: "coffee",
     },
     {
       id: 2,
@@ -30,6 +33,7 @@ const Products = () => {
       image:
         "https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?q=80&w=3270&auto=format&fit=crop",
       description: "ชาเขียวนมเย็น หวานมัน",
+      category: "tea",
     },
     {
       id: 3,
@@ -38,9 +42,62 @@ const Products = () => {
       image:
         "https://images.unsplash.com/photo-1613478223719-2ab802602423?q=80&w=3271&auto=format&fit=crop",
       description: "น้ำส้มคั้นสด",
+      category: "juice",
     },
-    // Add more products as needed
+    {
+      id: 4,
+      name: "อเมริกาโน่",
+      price: 45,
+      image:
+        "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=3337&auto=format&fit=crop",
+      description: "กาแฟดำ รสเข้มข้น",
+      category: "coffee",
+    },
+    {
+      id: 5,
+      name: "ชามะลิ",
+      price: 35,
+      image:
+        "https://images.unsplash.com/photo-1576092768241-dec231879fc3?q=80&w=3270&auto=format&fit=crop",
+      description: "ชามะลิหอม ชื่นใจ",
+      category: "tea",
+    },
   ];
+
+  // Get unique categories
+  const categories = [
+    "all",
+    ...new Set(products.map((product) => product.category)),
+  ];
+
+  // Category name mapping
+  const categoryNames: { [key: string]: string } = {
+    all: "ทั้งหมด",
+    coffee: "กาแฟ",
+    tea: "ชา",
+    juice: "น้ำผลไม้",
+  };
+
+  // Category color mapping
+  const categoryColors: {
+    [key: string]: { bg: string; text: string; badge: string };
+  } = {
+    coffee: {
+      bg: "bg-amber-50 dark:bg-amber-900/10",
+      text: "text-amber-600 dark:text-amber-400",
+      badge: "bg-amber-100 dark:bg-amber-900/30",
+    },
+    tea: {
+      bg: "bg-emerald-50 dark:bg-emerald-900/10",
+      text: "text-emerald-600 dark:text-emerald-400",
+      badge: "bg-emerald-100 dark:bg-emerald-900/30",
+    },
+    juice: {
+      bg: "bg-orange-50 dark:bg-orange-900/10",
+      text: "text-orange-600 dark:text-orange-400",
+      badge: "bg-orange-100 dark:bg-orange-900/30",
+    },
+  };
 
   // State for quantity of each product
   const [quantities, setQuantities] = useState<{ [key: number]: number }>(
@@ -61,7 +118,6 @@ const Products = () => {
     const quantity = quantities[product.id];
     if (quantity > 0) {
       addToCart(product, quantity);
-      // Reset quantity after adding to cart
       setQuantities((prev) => ({
         ...prev,
         [product.id]: 1,
@@ -69,12 +125,35 @@ const Products = () => {
     }
   };
 
+  const filteredProducts =
+    selectedCategory === "all"
+      ? products
+      : products.filter((product) => product.category === selectedCategory);
+
   return (
     <div>
       <Navbar />
 
+      {/* Category Filter Buttons */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        {categories.map((category) => (
+          <button
+            key={category}
+            onClick={() => setSelectedCategory(category)}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              selectedCategory === category
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            }`}
+          >
+            {categoryNames[category]}
+          </button>
+        ))}
+      </div>
+
+      {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {products.map((product) => (
+        {filteredProducts.map((product) => (
           <div
             key={product.id}
             className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300"
@@ -85,6 +164,14 @@ const Products = () => {
                 alt={product.name}
                 className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
               />
+              {/* Category Badge */}
+              <div
+                className={`absolute top-3 left-3 px-2 py-1 rounded-md ${
+                  categoryColors[product.category].badge
+                } ${categoryColors[product.category].text}`}
+              >
+                {categoryNames[product.category]}
+              </div>
             </div>
 
             <div className="p-4">

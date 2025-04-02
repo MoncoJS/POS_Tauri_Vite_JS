@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useCart } from "../context/CartContext";
 import Navbar from "../components/navbar";
 
 interface Product {
@@ -10,6 +11,8 @@ interface Product {
 }
 
 const Products = () => {
+  const { addToCart } = useCart();
+
   // Mock products data - replace with your actual data
   const products: Product[] = [
     {
@@ -56,8 +59,14 @@ const Products = () => {
 
   const handleAddToCart = (product: Product) => {
     const quantity = quantities[product.id];
-    console.log(`Adding ${quantity} x ${product.name} to cart`);
-    // Add your cart logic here
+    if (quantity > 0) {
+      addToCart(product, quantity);
+      // Reset quantity after adding to cart
+      setQuantities((prev) => ({
+        ...prev,
+        [product.id]: 1,
+      }));
+    }
   };
 
   return (

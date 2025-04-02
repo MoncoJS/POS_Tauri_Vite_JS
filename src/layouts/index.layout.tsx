@@ -1,16 +1,22 @@
 import Sidebar from "../components/sidebar";
+import Navbar from "../components/navbar";
 import { ReactNode } from "react";
-import Carts from "../pages/Cart.pages";
+
 interface LayoutProps {
   children?: ReactNode;
 }
 
 const Layout = ({ children }: LayoutProps) => {
   return (
-    <div>
-      <Sidebar />
-      <div className="p-4 sm:ml-64">
-        <div className="p-4 dark:border-gray-700">{children}</div>
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+      <Navbar />
+      <div className="flex">
+        <Sidebar />
+        <main className="flex-1 p-4 sm:ml-64 mt-16">
+          <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );

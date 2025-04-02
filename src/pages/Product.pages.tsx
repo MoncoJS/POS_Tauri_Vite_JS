@@ -1,7 +1,17 @@
+import Navbar from "../components/navbar";
+
 const Products = () => {
   return (
-    <div className="mt-4">
-      <div className="grid grid-cols-4 gap-4"></div>;
+    <div>
+      <Navbar />
+
+      <div className="grid grid-cols-4 gap-4">
+        <div>01</div>
+        <div>01</div>
+        <div>01</div>
+        <div>01</div>
+        <div>01</div>
+      </div>
     </div>
   );
 };

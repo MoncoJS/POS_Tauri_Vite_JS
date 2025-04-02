@@ -1,6 +1,6 @@
-import { useStock } from "../context/StockContext";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Navbar from "../components/navbar";
+import { useStock } from "../context/StockContext";
 
 interface Product {
   id: number;
@@ -13,17 +13,12 @@ interface Product {
 
 const Stocks = () => {
   const { stocks, updateStock } = useStock();
-  const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
-  const [tempStocks, setTempStocks] = useState<{ [key: number]: number }>({});
-
-  // Mock products data (same as in Products page)
-  const products: Product[] = [
+  const [products, setProducts] = useState<Product[]>([
     {
       id: 1,
       name: "กาแฟลาเต้",
       price: 55,
-      image:
-        "https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=3337&auto=format&fit=crop",
+      image: "/images/latte.jpg",
       description: "กาแฟนมร้อน หอมกรุ่น",
       category: "coffee",
     },
@@ -31,8 +26,7 @@ const Stocks = () => {
       id: 2,
       name: "ชาเขียวนม",
       price: 45,
-      image:
-        "https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?q=80&w=3270&auto=format&fit=crop",
+      image: "/images/greentea.jpg",
       description: "ชาเขียวนมเย็น หวานมัน",
       category: "tea",
     },
@@ -40,54 +34,105 @@ const Stocks = () => {
       id: 3,
       name: "น้ำส้ม",
       price: 35,
-      image:
-        "https://images.unsplash.com/photo-1613478223719-2ab802602423?q=80&w=3271&auto=format&fit=crop",
+      image: "/images/orange.jpg",
       description: "น้ำส้มคั้นสด",
       category: "juice",
     },
-    {
-      id: 4,
-      name: "อเมริกาโน่",
-      price: 45,
-      image:
-        "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=3337&auto=format&fit=crop",
-      description: "กาแฟดำ รสเข้มข้น",
-      category: "coffee",
-    },
-    {
-      id: 5,
-      name: "ชามะลิ",
-      price: 35,
-      image:
-        "https://images.unsplash.com/photo-1576092768241-dec231879fc3?q=80&w=3270&auto=format&fit=crop",
-      description: "ชามะลิหอม ชื่นใจ",
-      category: "tea",
-    },
+  ]);
+
+  const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [tempStocks, setTempStocks] = useState<{ [key: number]: number }>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [newProduct, setNewProduct] = useState<Partial<Product>>({
+    name: "",
+    price: 0,
+    image: "",
+    description: "",
+    category: "coffee",
+  });
+
+  const categories = [
+    { value: "coffee", label: "กาแฟ" },
+    { value: "tea", label: "ชา" },
+    { value: "juice", label: "น้ำผลไม้" },
+    { value: "smoothie", label: "สมูทตี้" },
+    { value: "milk", label: "นม" },
   ];
 
-  const handleEditClick = (productId: number) => {
-    setEditMode((prev) => ({ ...prev, [productId]: true }));
-    setTempStocks((prev) => ({ ...prev, [productId]: stocks[productId] || 0 }));
-  };
-
-  const handleSaveClick = (productId: number) => {
-    const newStock = tempStocks[productId];
-    if (newStock >= 0) {
-      // Calculate the difference to add to stock
-      const difference = newStock - (stocks[productId] || 0);
-      updateStock(productId, -difference); // Negative because updateStock subtracts
-      setEditMode((prev) => ({ ...prev, [productId]: false }));
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (selectedProduct) {
+          setProducts((prev) =>
+            prev.map((p) =>
+              p.id === selectedProduct.id
+                ? { ...p, image: reader.result as string }
+                : p
+            )
+          );
+        } else {
+          setNewProduct((prev) => ({
+            ...prev,
+            image: reader.result as string,
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleCancelClick = (productId: number) => {
-    setEditMode((prev) => ({ ...prev, [productId]: false }));
+  const handleEditClick = (product: Product) => {
+    setSelectedProduct(product);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveClick = () => {
+    if (selectedProduct) {
+      setProducts((prev) =>
+        prev.map((p) => (p.id === selectedProduct.id ? selectedProduct : p))
+      );
+    } else if (newProduct.name && newProduct.price && newProduct.image) {
+      const newId = Math.max(...products.map((p) => p.id), 0) + 1;
+      const productToAdd = {
+        ...newProduct,
+        id: newId,
+      } as Product;
+      setProducts((prev) => [...prev, productToAdd]);
+      updateStock(newId, 0);
+    }
+    handleCloseModal();
+  };
+
+  const handleCloseModal = () => {
+    setSelectedProduct(null);
+    setNewProduct({
+      name: "",
+      price: 0,
+      image: "",
+      description: "",
+      category: "coffee",
+    });
+    setIsModalOpen(false);
   };
 
   const handleStockChange = (productId: number, value: string) => {
     const newValue = parseInt(value) || 0;
     if (newValue >= 0) {
       setTempStocks((prev) => ({ ...prev, [productId]: newValue }));
+    }
+  };
+
+  const handleStockSave = (productId: number) => {
+    const newStock = tempStocks[productId];
+    if (newStock >= 0) {
+      const difference = newStock - (stocks[productId] || 0);
+      updateStock(productId, -difference);
+      setEditMode((prev) => ({ ...prev, [productId]: false }));
     }
   };
 
@@ -101,9 +146,17 @@ const Stocks = () => {
     <div>
       <Navbar />
       <div className="container mx-auto px-4 py-8">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
-          จัดการสต็อกสินค้า
-        </h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            จัดการสต็อกสินค้า
+          </h2>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300"
+          >
+            เพิ่มสินค้าใหม่
+          </button>
+        </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -151,7 +204,11 @@ const Stocks = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                        {product.category}
+                        {
+                          categories.find(
+                            (cat) => cat.value === product.category
+                          )?.label
+                        }
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
@@ -179,29 +236,53 @@ const Stocks = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {editMode[product.id] ? (
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleSaveClick(product.id)}
-                            className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
-                          >
-                            บันทึก
-                          </button>
-                          <button
-                            onClick={() => handleCancelClick(product.id)}
-                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                          >
-                            ยกเลิก
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleEditClick(product.id)}
-                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          แก้ไข
-                        </button>
-                      )}
+                      <div className="flex space-x-2">
+                        {editMode[product.id] ? (
+                          <>
+                            <button
+                              onClick={() => handleStockSave(product.id)}
+                              className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
+                            >
+                              บันทึก
+                            </button>
+                            <button
+                              onClick={() =>
+                                setEditMode((prev) => ({
+                                  ...prev,
+                                  [product.id]: false,
+                                }))
+                              }
+                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              ยกเลิก
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditMode((prev) => ({
+                                  ...prev,
+                                  [product.id]: true,
+                                }));
+                                setTempStocks((prev) => ({
+                                  ...prev,
+                                  [product.id]: stocks[product.id] || 0,
+                                }));
+                              }}
+                              className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              แก้ไขสต็อก
+                            </button>
+                            <button
+                              onClick={() => handleEditClick(product)}
+                              className="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
+                            >
+                              แก้ไขข้อมูล
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -209,6 +290,168 @@ const Stocks = () => {
             </table>
           </div>
         </div>
+
+        {/* Product Management Modal */}
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div
+                className="fixed inset-0 transition-opacity"
+                aria-hidden="true"
+              >
+                <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+              </div>
+
+              <div className="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                    {selectedProduct ? "แก้ไขสินค้า" : "เพิ่มสินค้าใหม่"}
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        ชื่อสินค้า
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedProduct?.name || newProduct.name}
+                        onChange={(e) => {
+                          if (selectedProduct) {
+                            setSelectedProduct({
+                              ...selectedProduct,
+                              name: e.target.value,
+                            });
+                          } else {
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        placeholder="ชื่อสินค้า"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        ราคา
+                      </label>
+                      <input
+                        type="number"
+                        value={selectedProduct?.price || newProduct.price}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value) || 0;
+                          if (selectedProduct) {
+                            setSelectedProduct({
+                              ...selectedProduct,
+                              price: value,
+                            });
+                          } else {
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              price: value,
+                            }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        placeholder="ราคา"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        รูปภาพ
+                      </label>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                      {(selectedProduct?.image || newProduct.image) && (
+                        <div className="mt-2">
+                          <img
+                            src={selectedProduct?.image || newProduct.image}
+                            alt="Preview"
+                            className="h-20 w-20 object-cover rounded-lg"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        ประเภท
+                      </label>
+                      <select
+                        value={selectedProduct?.category || newProduct.category}
+                        onChange={(e) => {
+                          if (selectedProduct) {
+                            setSelectedProduct({
+                              ...selectedProduct,
+                              category: e.target.value,
+                            });
+                          } else {
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              category: e.target.value,
+                            }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      >
+                        {categories.map((cat) => (
+                          <option key={cat.value} value={cat.value}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        รายละเอียด
+                      </label>
+                      <textarea
+                        value={
+                          selectedProduct?.description || newProduct.description
+                        }
+                        onChange={(e) => {
+                          if (selectedProduct) {
+                            setSelectedProduct({
+                              ...selectedProduct,
+                              description: e.target.value,
+                            });
+                          } else {
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              description: e.target.value,
+                            }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        placeholder="รายละเอียดสินค้า"
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                  <button
+                    onClick={handleSaveClick}
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                  >
+                    บันทึก
+                  </button>
+                  <button
+                    onClick={handleCloseModal}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm dark:bg-gray-600 dark:text-gray-200 dark:border-gray-500 dark:hover:bg-gray-700"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

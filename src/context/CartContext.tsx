@@ -1,4 +1,14 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
+import { db } from "../configs/firebase";
+import { collection, doc, setDoc, getDoc, deleteDoc } from "firebase/firestore";
+import { auth } from "../configs/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 interface CartItem {
   id: number;
@@ -24,44 +34,88 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const addToCart = (
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+        loadCartData(user.uid);
+      } else {
+        setUserId(null);
+        setItems([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const loadCartData = async (uid: string) => {
+    try {
+      const cartDoc = await getDoc(doc(db, `carts/${uid}`));
+      if (cartDoc.exists()) {
+        setItems(cartDoc.data().items || []);
+      }
+    } catch (error) {
+      console.error("Error loading cart data:", error);
+    }
+  };
+
+  const saveCartData = async (newItems: CartItem[]) => {
+    if (!userId) return;
+
+    try {
+      await setDoc(doc(db, "carts", userId), {
+        items: newItems,
+        updatedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error saving cart data:", error);
+    }
+  };
+
+  const addToCart = async (
     product: { id: number; name: string; price: number; image: string },
     quantity: number
   ) => {
-    setItems((currentItems) => {
-      const existingItem = currentItems.find((item) => item.id === product.id);
+    const newItems = [...items];
+    const existingItem = newItems.find((item) => item.id === product.id);
 
-      if (existingItem) {
-        return currentItems.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + quantity }
-            : item
-        );
-      }
+    if (existingItem) {
+      existingItem.quantity += quantity;
+    } else {
+      newItems.push({ ...product, quantity });
+    }
 
-      return [...currentItems, { ...product, quantity }];
-    });
+    setItems(newItems);
+    await saveCartData(newItems);
   };
 
-  const removeFromCart = (productId: number) => {
-    setItems((currentItems) =>
-      currentItems.filter((item) => item.id !== productId)
-    );
+  const removeFromCart = async (productId: number) => {
+    const newItems = items.filter((item) => item.id !== productId);
+    setItems(newItems);
+    await saveCartData(newItems);
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
+  const updateQuantity = async (productId: number, quantity: number) => {
     if (quantity < 1) return;
 
-    setItems((currentItems) =>
-      currentItems.map((item) =>
-        item.id === productId ? { ...item, quantity } : item
-      )
+    const newItems = items.map((item) =>
+      item.id === productId ? { ...item, quantity } : item
     );
+    setItems(newItems);
+    await saveCartData(newItems);
   };
 
-  const clearCart = () => {
+  const clearCart = async () => {
     setItems([]);
+    if (userId) {
+      try {
+        await deleteDoc(doc(db, "carts", userId));
+      } catch (error) {
+        console.error("Error clearing cart:", error);
+      }
+    }
   };
 
   const getTotal = () => {

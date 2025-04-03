@@ -1,4 +1,12 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
+import { db } from "../configs/firebase";
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 
 interface StockItem {
   id: number;
@@ -15,20 +23,52 @@ interface StockContextType {
 const StockContext = createContext<StockContextType | undefined>(undefined);
 
 export const StockProvider = ({ children }: { children: ReactNode }) => {
-  // Initialize with mock stock data
-  const [stocks, setStocks] = useState<{ [key: number]: number }>({
-    1: 50, // กาแฟลาเต้
-    2: 40, // ชาเขียวนม
-    3: 30, // น้ำส้ม
-    4: 45, // อเมริกาโน่
-    5: 35, // ชามะลิ
-  });
+  const [stocks, setStocks] = useState<{ [key: number]: number }>({});
 
-  const updateStock = (productId: number, quantity: number) => {
-    setStocks((prevStocks) => ({
-      ...prevStocks,
-      [productId]: Math.max(0, (prevStocks[productId] || 0) - quantity),
-    }));
+  useEffect(() => {
+    loadStockData();
+  }, []);
+
+  const loadStockData = async () => {
+    try {
+      const stockDoc = await getDoc(doc(db, "stocks", "inventory"));
+      if (stockDoc.exists()) {
+        setStocks(stockDoc.data().stocks || {});
+      } else {
+        // Initialize with mock stock data if no data exists
+        const initialStocks = {
+          1: 50, // กาแฟลาเต้
+          2: 40, // ชาเขียวนม
+          3: 30, // น้ำส้ม
+          4: 45, // อเมริกาโน่
+          5: 35, // ชามะลิ
+        };
+        await setDoc(doc(db, "stocks", "inventory"), { stocks: initialStocks });
+        setStocks(initialStocks);
+      }
+    } catch (error) {
+      console.error("Error loading stock data:", error);
+    }
+  };
+
+  const saveStockData = async (newStocks: { [key: number]: number }) => {
+    try {
+      await updateDoc(doc(db, "stocks", "inventory"), {
+        stocks: newStocks,
+        updatedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error saving stock data:", error);
+    }
+  };
+
+  const updateStock = async (productId: number, quantity: number) => {
+    const currentStock = stocks[productId] || 0;
+    const newStock = Math.max(0, currentStock - quantity);
+    const newStocks = { ...stocks, [productId]: newStock };
+
+    setStocks(newStocks);
+    await saveStockData(newStocks);
   };
 
   const checkStock = (productId: number) => {

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCart } from "../context/CartContext";
 import Navbar from "../components/navbar";
+import { db } from "../configs/firebase";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 
 interface Product {
   id: number;
@@ -14,61 +16,31 @@ interface Product {
 const Products = () => {
   const { addToCart } = useCart();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock products data with categories
-  const products: Product[] = [
-    {
-      id: 1,
-      name: "กาแฟลาเต้",
-      price: 55,
-      image:
-        "https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=3337&auto=format&fit=crop",
-      description: "กาแฟนมร้อน หอมกรุ่น",
-      category: "coffee",
-    },
-    {
-      id: 2,
-      name: "ชาเขียวนม",
-      price: 45,
-      image:
-        "https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?q=80&w=3270&auto=format&fit=crop",
-      description: "ชาเขียวนมเย็น หวานมัน",
-      category: "tea",
-    },
-    {
-      id: 3,
-      name: "น้ำส้ม",
-      price: 35,
-      image:
-        "https://images.unsplash.com/photo-1613478223719-2ab802602423?q=80&w=3271&auto=format&fit=crop",
-      description: "น้ำส้มคั้นสด",
-      category: "juice",
-    },
-    {
-      id: 4,
-      name: "อเมริกาโน่",
-      price: 45,
-      image:
-        "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=3337&auto=format&fit=crop",
-      description: "กาแฟดำ รสเข้มข้น",
-      category: "coffee",
-    },
-    {
-      id: 5,
-      name: "ชามะลิ",
-      price: 35,
-      image:
-        "https://images.unsplash.com/photo-1576092768241-dec231879fc3?q=80&w=3270&auto=format&fit=crop",
-      description: "ชามะลิหอม ชื่นใจ",
-      category: "tea",
-    },
-  ];
+  // Load products from Firestore with real-time updates
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, "products"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const productsData: Product[] = [];
+        snapshot.forEach((doc) => {
+          productsData.push({ id: parseInt(doc.id), ...doc.data() } as Product);
+        });
+        setProducts(productsData);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error loading products:", error);
+        setError("ไม่สามารถโหลดข้อมูลสินค้าได้");
+        setIsLoading(false);
+      }
+    );
 
-  // Get unique categories
-  const categories = [
-    "all",
-    ...new Set(products.map((product) => product.category)),
-  ];
+    return () => unsubscribe();
+  }, []);
 
   // Category name mapping
   const categoryNames: { [key: string]: string } = {
@@ -104,6 +76,13 @@ const Products = () => {
     products.reduce((acc, product) => ({ ...acc, [product.id]: 1 }), {})
   );
 
+  // Update quantities when products change
+  useEffect(() => {
+    setQuantities(
+      products.reduce((acc, product) => ({ ...acc, [product.id]: 1 }), {})
+    );
+  }, [products]);
+
   const handleQuantityChange = (productId: number, value: string) => {
     const newValue = parseInt(value) || 0;
     if (newValue >= 0) {
@@ -125,10 +104,34 @@ const Products = () => {
     }
   };
 
+  // Get unique categories from products
+  const categories = [
+    "all",
+    ...new Set(products.map((product) => product.category)),
+  ];
+
   const filteredProducts =
     selectedCategory === "all"
       ? products
       : products.filter((product) => product.category === selectedCategory);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -146,7 +149,7 @@ const Products = () => {
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             }`}
           >
-            {categoryNames[category]}
+            {categoryNames[category] || category}
           </button>
         ))}
       </div>
@@ -167,10 +170,10 @@ const Products = () => {
               {/* Category Badge */}
               <div
                 className={`absolute top-3 left-3 px-2 py-1 rounded-md ${
-                  categoryColors[product.category].badge
-                } ${categoryColors[product.category].text}`}
+                  categoryColors[product.category]?.badge || "bg-gray-100"
+                } ${categoryColors[product.category]?.text || "text-gray-600"}`}
               >
-                {categoryNames[product.category]}
+                {categoryNames[product.category] || product.category}
               </div>
             </div>
 
@@ -192,7 +195,7 @@ const Products = () => {
                 <input
                   type="number"
                   min="1"
-                  value={quantities[product.id]}
+                  value={quantities[product.id] || 1}
                   onChange={(e) =>
                     handleQuantityChange(product.id, e.target.value)
                   }

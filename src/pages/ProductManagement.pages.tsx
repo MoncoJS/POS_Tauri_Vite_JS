@@ -1,6 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navbar from "../components/navbar";
 import { useStock } from "../context/StockContext";
+import { db } from "../configs/firebase";
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  serverTimestamp,
+  query,
+  orderBy,
+} from "firebase/firestore";
 
 interface Product {
   id: number;
@@ -9,41 +21,17 @@ interface Product {
   image: string;
   description: string;
   category: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 const ProductManagement = () => {
   const { stocks, updateStock } = useStock();
-  const [products, setProducts] = useState<Product[]>([
-    {
-      id: 1,
-      name: "กาแฟลาเต้",
-      price: 55,
-      image:
-        "https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=3337&auto=format&fit=crop",
-      description: "กาแฟนมร้อน หอมกรุ่น",
-      category: "coffee",
-    },
-    {
-      id: 2,
-      name: "ชาเขียวนม",
-      price: 45,
-      image:
-        "https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?q=80&w=3270&auto=format&fit=crop",
-      description: "ชาเขียวนมเย็น หวานมัน",
-      category: "tea",
-    },
-    {
-      id: 3,
-      name: "น้ำส้ม",
-      price: 35,
-      image:
-        "https://images.unsplash.com/photo-1613478223719-2ab802602423?q=80&w=3271&auto=format&fit=crop",
-      description: "น้ำส้มคั้นสด",
-      category: "juice",
-    },
-  ]);
-
+  const [products, setProducts] = useState<Product[]>([]);
   const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
     name: "",
     price: 0,
@@ -60,48 +48,130 @@ const ProductManagement = () => {
     { value: "milk", label: "นม" },
   ];
 
+  // Load products from Firestore with real-time updates
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, "products"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const productsData: Product[] = [];
+        snapshot.forEach((doc) => {
+          productsData.push({ id: parseInt(doc.id), ...doc.data() } as Product);
+        });
+        setProducts(productsData);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error loading products:", error);
+        setError("ไม่สามารถโหลดข้อมูลสินค้าได้");
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const handleEditClick = (product: Product) => {
     setEditMode((prev) => ({ ...prev, [product.id]: true }));
   };
 
-  const handleSaveClick = (product: Product) => {
-    setEditMode((prev) => ({ ...prev, [product.id]: false }));
-    setProducts((prevProducts) =>
-      prevProducts.map((p) => (p.id === product.id ? product : p))
-    );
+  const handleSaveClick = async (product: Product) => {
+    try {
+      await updateDoc(doc(db, "products", product.id.toString()), {
+        ...product,
+        updatedAt: serverTimestamp(),
+      });
+      setEditMode((prev) => ({ ...prev, [product.id]: false }));
+      setError(null);
+    } catch (err) {
+      console.error("Error updating product:", err);
+      setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
+    }
   };
 
   const handleCancelEdit = (productId: number) => {
     setEditMode((prev) => ({ ...prev, [productId]: false }));
   };
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.price || !newProduct.image) {
-      alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+      setError("กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
 
-    const newId = Math.max(...products.map((p) => p.id), 0) + 1;
-    const productToAdd = {
-      ...newProduct,
-      id: newId,
-    } as Product;
+    try {
+      const newId = Math.max(...products.map((p) => p.id), 0) + 1;
+      const productToAdd = {
+        ...newProduct,
+        id: newId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      } as Product;
 
-    setProducts((prev) => [...prev, productToAdd]);
-    updateStock(newId, 0); // Initialize stock to 0
-    setNewProduct({
-      name: "",
-      price: 0,
-      image: "",
-      description: "",
-      category: "coffee",
-    });
+      // Add product to Firestore
+      await setDoc(doc(db, "products", newId.toString()), productToAdd);
+
+      // Initialize stock for new product
+      await updateDoc(doc(db, "stocks", "inventory"), {
+        [`stocks.${newId}`]: 0,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Reset form
+      setNewProduct({
+        name: "",
+        price: 0,
+        image: "",
+        description: "",
+        category: "coffee",
+      });
+      setError(null);
+    } catch (err) {
+      console.error("Error adding product:", err);
+      setError("ไม่สามารถเพิ่มสินค้าได้");
+    }
   };
+
+  const handleDeleteProduct = async (productId: number) => {
+    if (!window.confirm("คุณต้องการลบสินค้านี้ใช่หรือไม่?")) {
+      return;
+    }
+
+    try {
+      // Delete product from Firestore
+      await deleteDoc(doc(db, "products", productId.toString()));
+
+      // Remove stock entry
+      const stocksRef = doc(db, "stocks", "inventory");
+      await updateDoc(stocksRef, {
+        [`stocks.${productId}`]: null,
+        updatedAt: serverTimestamp(),
+      });
+
+      setError(null);
+    } catch (err) {
+      console.error("Error deleting product:", err);
+      setError("ไม่สามารถลบสินค้าได้");
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <Navbar />
       <div className="container mx-auto px-4 py-8">
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+            {error}
+          </div>
+        )}
+
         <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
           จัดการรายการสินค้า
         </h2>
@@ -352,12 +422,20 @@ const ProductManagement = () => {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => handleEditClick(product)}
-                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          แก้ไข
-                        </button>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleEditClick(product)}
+                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            แก้ไข
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            ลบ
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

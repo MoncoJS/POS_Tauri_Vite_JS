@@ -1,19 +1,25 @@
 import { useCart } from "../context/CartContext";
 import { useStock } from "../context/StockContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { db } from "../configs/firebase";
+import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
 
 const Cart = () => {
   const { items, removeFromCart, updateQuantity, getTotal, clearCart } =
     useCart();
   const { checkStock, updateStock, checkStockAvailability } = useStock();
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleQuantityChange = (productId: number, newQuantity: number) => {
+  const handleQuantityChange = async (
+    productId: number,
+    newQuantity: number
+  ) => {
     if (newQuantity < 1) return;
 
     // Check if requested quantity is available in stock
     if (checkStockAvailability(productId, newQuantity)) {
-      updateQuantity(productId, newQuantity);
+      await updateQuantity(productId, newQuantity);
       setCheckoutError(null);
     } else {
       const availableStock = checkStock(productId);
@@ -23,30 +29,58 @@ const Cart = () => {
     }
   };
 
-  const handleCheckout = () => {
-    // Verify all items are available in stock
-    const stockAvailable = items.every((item) =>
-      checkStockAvailability(item.id, item.quantity)
-    );
-
-    if (!stockAvailable) {
-      setCheckoutError(
-        "บางรายการมีสินค้าไม่พอ กรุณาตรวจสอบจำนวนสินค้าอีกครั้ง"
-      );
-      return;
-    }
-
-    // Update stock for all items
-    items.forEach((item) => {
-      updateStock(item.id, item.quantity);
-    });
-
-    // Clear cart
-    clearCart();
+  const handleCheckout = async () => {
+    setIsProcessing(true);
     setCheckoutError(null);
 
-    // Show success message (you might want to use a proper notification system)
-    alert("ชำระเงินสำเร็จ!");
+    try {
+      // Start a transaction to ensure stock consistency
+      await runTransaction(db, async (transaction) => {
+        // Get current stock levels
+        const stockDoc = await transaction.get(doc(db, "stocks", "inventory"));
+        const currentStocks = stockDoc.data()?.stocks || {};
+
+        // Verify all items are available
+        for (const item of items) {
+          const currentStock = currentStocks[item.id] || 0;
+          if (currentStock < item.quantity) {
+            throw new Error(`สินค้า ${item.name} มีไม่พอในสต็อก`);
+          }
+        }
+
+        // Update stock levels
+        const stockUpdates = items.reduce((updates, item) => {
+          updates[`stocks.${item.id}`] =
+            (currentStocks[item.id] || 0) - item.quantity;
+          return updates;
+        }, {} as { [key: string]: number });
+
+        // Create order record
+        const orderId = Date.now().toString();
+        transaction.set(doc(db, "orders", orderId), {
+          items,
+          total: getTotal(),
+          createdAt: serverTimestamp(),
+          status: "completed",
+        });
+
+        // Update stock
+        transaction.update(doc(db, "stocks", "inventory"), {
+          ...stockUpdates,
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      // Clear cart after successful transaction
+      await clearCart();
+      setCheckoutError(null);
+      alert("ชำระเงินสำเร็จ!");
+    } catch (error: any) {
+      console.error("Checkout error:", error);
+      setCheckoutError(error.message || "เกิดข้อผิดพลาดในการชำระเงิน");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (items.length === 0) {
@@ -216,14 +250,18 @@ const Cart = () => {
 
           <button
             onClick={handleCheckout}
-            disabled={items.some((item) => item.quantity > checkStock(item.id))}
+            disabled={
+              isProcessing ||
+              items.some((item) => item.quantity > checkStock(item.id))
+            }
             className={`w-full font-medium py-2 px-4 rounded-lg transition-colors duration-300 ${
+              isProcessing ||
               items.some((item) => item.quantity > checkStock(item.id))
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
           >
-            ดำเนินการชำระเงิน
+            {isProcessing ? "กำลังดำเนินการ..." : "ดำเนินการชำระเงิน"}
           </button>
         </div>
       </div>

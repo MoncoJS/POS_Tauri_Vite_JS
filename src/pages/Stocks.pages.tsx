@@ -1,6 +1,18 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Navbar from "../components/navbar";
 import { useStock } from "../context/StockContext";
+import { db } from "../configs/firebase";
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  serverTimestamp,
+  query,
+  orderBy,
+} from "firebase/firestore";
 
 interface Product {
   id: number;
@@ -13,37 +25,12 @@ interface Product {
 
 const Stocks = () => {
   const { stocks, updateStock } = useStock();
-  const [products, setProducts] = useState<Product[]>([
-    {
-      id: 1,
-      name: "กาแฟลาเต้",
-      price: 55,
-      image: "/images/latte.jpg",
-      description: "กาแฟนมร้อน หอมกรุ่น",
-      category: "coffee",
-    },
-    {
-      id: 2,
-      name: "ชาเขียวนม",
-      price: 45,
-      image: "/images/greentea.jpg",
-      description: "ชาเขียวนมเย็น หวานมัน",
-      category: "tea",
-    },
-    {
-      id: 3,
-      name: "น้ำส้ม",
-      price: 35,
-      image: "/images/orange.jpg",
-      description: "น้ำส้มคั้นสด",
-      category: "juice",
-    },
-  ]);
-
+  const [products, setProducts] = useState<Product[]>([]);
   const [editMode, setEditMode] = useState<{ [key: number]: boolean }>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [tempStocks, setTempStocks] = useState<{ [key: number]: number }>({});
+  const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
@@ -62,19 +49,39 @@ const Stocks = () => {
     { value: "milk", label: "นม" },
   ];
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Load products from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, "products"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const productsData: Product[] = [];
+        snapshot.forEach((doc) => {
+          productsData.push({ id: parseInt(doc.id), ...doc.data() } as Product);
+        });
+        setProducts(productsData);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error loading products:", error);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (selectedProduct) {
-          setProducts((prev) =>
-            prev.map((p) =>
-              p.id === selectedProduct.id
-                ? { ...p, image: reader.result as string }
-                : p
-            )
-          );
+          setSelectedProduct({
+            ...selectedProduct,
+            image: reader.result as string,
+          });
         } else {
           setNewProduct((prev) => ({
             ...prev,
@@ -91,21 +98,35 @@ const Stocks = () => {
     setIsModalOpen(true);
   };
 
-  const handleSaveClick = () => {
-    if (selectedProduct) {
-      setProducts((prev) =>
-        prev.map((p) => (p.id === selectedProduct.id ? selectedProduct : p))
-      );
-    } else if (newProduct.name && newProduct.price && newProduct.image) {
-      const newId = Math.max(...products.map((p) => p.id), 0) + 1;
-      const productToAdd = {
-        ...newProduct,
-        id: newId,
-      } as Product;
-      setProducts((prev) => [...prev, productToAdd]);
-      updateStock(newId, 0);
+  const handleSaveClick = async () => {
+    try {
+      if (selectedProduct) {
+        // Update existing product
+        await updateDoc(doc(db, "products", selectedProduct.id.toString()), {
+          ...selectedProduct,
+          updatedAt: serverTimestamp(),
+        });
+      } else if (newProduct.name && newProduct.price && newProduct.image) {
+        // Add new product
+        const newId = Math.max(...products.map((p) => p.id), 0) + 1;
+        const productToAdd = {
+          ...newProduct,
+          id: newId,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(doc(db, "products", newId.toString()), productToAdd);
+
+        // Initialize stock for new product
+        await updateDoc(doc(db, "stocks", "inventory"), {
+          [`stocks.${newId}`]: 0,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      handleCloseModal();
+    } catch (error) {
+      console.error("Error saving product:", error);
     }
-    handleCloseModal();
   };
 
   const handleCloseModal = () => {
@@ -127,12 +148,16 @@ const Stocks = () => {
     }
   };
 
-  const handleStockSave = (productId: number) => {
-    const newStock = tempStocks[productId];
-    if (newStock >= 0) {
-      const difference = newStock - (stocks[productId] || 0);
-      updateStock(productId, -difference);
-      setEditMode((prev) => ({ ...prev, [productId]: false }));
+  const handleStockSave = async (productId: number) => {
+    try {
+      const newStock = tempStocks[productId];
+      if (newStock >= 0) {
+        const difference = newStock - (stocks[productId] || 0);
+        await updateStock(productId, -difference);
+        setEditMode((prev) => ({ ...prev, [productId]: false }));
+      }
+    } catch (error) {
+      console.error("Error updating stock:", error);
     }
   };
 
@@ -141,6 +166,14 @@ const Stocks = () => {
     if (stock <= 20) return "text-yellow-500 dark:text-yellow-400";
     return "text-green-500 dark:text-green-400";
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div>
